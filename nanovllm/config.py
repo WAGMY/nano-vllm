@@ -8,6 +8,8 @@ class Config:
     model: str
     max_num_batched_tokens: int = 16384
     max_num_seqs: int = 512
+    enable_chunked_prefill: bool = False
+    prefill_chunk_size: int = 1024
     max_model_len: int = 4096
     gpu_memory_utilization: float = 0.9
     tensor_parallel_size: int = 1
@@ -23,3 +25,7 @@ class Config:
         assert 1 <= self.tensor_parallel_size <= 8
         self.hf_config = AutoConfig.from_pretrained(self.model)
         self.max_model_len = min(self.max_model_len, self.hf_config.max_position_embeddings)
+        assert self.max_num_batched_tokens >= self.max_model_len
+        if self.enable_chunked_prefill:
+            assert self.prefill_chunk_size >= self.kvcache_block_size
+            assert self.prefill_chunk_size % self.kvcache_block_size == 0

@@ -32,9 +32,13 @@ class LLMEngine:
         self.tokenizer = AutoTokenizer.from_pretrained(config.model, use_fast=True)
         config.eos = self.tokenizer.eos_token_id
         self.scheduler = Scheduler(config)
+        self.enable_chunked_prefill = config.enable_chunked_prefill
+        self._finished_seqs: dict[int, Sequence] = {}
         atexit.register(self.exit)
 
     def exit(self):
+        if not hasattr(self, "model_runner"):
+            return
         self.model_runner.call("exit")
         del self.model_runner
         for p in self.ps:
@@ -47,11 +51,16 @@ class LLMEngine:
         self.scheduler.add(seq)
 
     def step(self):
-        seqs, is_prefill = self.scheduler.schedule()
-        num_tokens = sum(seq.num_scheduled_tokens for seq in seqs) if is_prefill else -len(seqs)
-        token_ids = self.model_runner.call("run", seqs, is_prefill)
-        self.scheduler.postprocess(seqs, token_ids, is_prefill)
-        outputs = [(seq.seq_id, seq.completion_token_ids) for seq in seqs if seq.is_finished]
+        seqs, chunk_sizes = self.scheduler.schedule()
+        token_ids = self.model_runner.call("run", seqs, chunk_sizes)
+        self.scheduler.postprocess(seqs, chunk_sizes, token_ids)
+        outputs = []
+        for seq in seqs:
+            if seq.is_finished:
+                self._finished_seqs[seq.seq_id] = seq
+                outputs.append((seq.seq_id, seq.completion_token_ids))
+        has_prefill = any(cs > 1 for cs in chunk_sizes)
+        num_tokens = sum(chunk_sizes) if has_prefill else -len(seqs)
         return outputs, num_tokens
 
     def is_finished(self):
