@@ -29,11 +29,12 @@ class LLMEngine:
             self.ps.append(process)
             self.events.append(event)
         self.model_runner = ModelRunner(config, 0, self.events)
-        self.tokenizer = AutoTokenizer.from_pretrained(config.model, use_fast=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model, use_fast=True, clean_up_tokenization_spaces=False)
         config.eos = self.tokenizer.eos_token_id
         self.scheduler = Scheduler(config)
         self.enable_chunked_prefill = config.enable_chunked_prefill
         self._finished_seqs: dict[int, Sequence] = {}
+        self.last_metrics: dict = {}
         atexit.register(self.exit)
 
     def exit(self):
@@ -75,6 +76,7 @@ class LLMEngine:
         pbar = tqdm(total=len(prompts), desc="Generating", dynamic_ncols=True, disable=not use_tqdm)
         if not isinstance(sampling_params, list):
             sampling_params = [sampling_params] * len(prompts)
+        self._finished_seqs = {}
         for prompt, sp in zip(prompts, sampling_params):
             self.add_request(prompt, sp)
         outputs = {}
@@ -94,6 +96,11 @@ class LLMEngine:
                 outputs[seq_id] = token_ids
                 pbar.update(1)
         pbar.close()
+        finished = [self._finished_seqs[sid] for sid in sorted(self._finished_seqs)]
+        self.last_metrics = {
+            "ttft_ms": [s.ttft * 1000 for s in finished if s.ttft is not None],
+            "tpot_ms": [t * 1000 for s in finished for t in s.token_intervals],
+        }
         outputs = [outputs[seq_id] for seq_id in sorted(outputs.keys())]
         outputs = [{"text": self.tokenizer.decode(token_ids), "token_ids": token_ids} for token_ids in outputs]
         return outputs

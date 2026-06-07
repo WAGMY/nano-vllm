@@ -29,6 +29,10 @@ class Sequence:
         self.temperature = sampling_params.temperature
         self.max_tokens = sampling_params.max_tokens
         self.ignore_eos = sampling_params.ignore_eos
+        self.t_submit = perf_counter()
+        self.t_first_token: float | None = None
+        self._t_last_token: float | None = None
+        self.token_intervals: list[float] = []
 
     def __len__(self):
         return self.num_tokens
@@ -72,7 +76,17 @@ class Sequence:
         assert 0 <= i < self.num_blocks
         return self.token_ids[i*self.block_size: (i+1)*self.block_size]
 
+    @property
+    def ttft(self) -> float | None:
+        return self.t_first_token - self.t_submit if self.t_first_token is not None else None
+
     def append_token(self, token_id: int):
+        t = perf_counter()
+        if self.num_completion_tokens == 0:
+            self.t_first_token = t
+        else:
+            self.token_intervals.append(t - self._t_last_token)
+        self._t_last_token = t
         self.token_ids.append(token_id)
         self.last_token = token_id
         self.num_tokens += 1

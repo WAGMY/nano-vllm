@@ -3,15 +3,15 @@ import time
 from random import randint, seed
 from nanovllm import LLM, SamplingParams
 # from vllm import LLM, SamplingParams
+import argparse
 
-
-def main():
+def main(model_path : str) -> None:
     seed(0)
     num_seqs = 256
     max_input_len = 1024
     max_ouput_len = 1024
 
-    path = os.path.expanduser("~/huggingface/Qwen3-0.6B/")
+    path = os.path.expanduser(model_path)
     llm = LLM(path, enforce_eager=False, max_model_len=4096)
 
     prompt_token_ids = [[randint(0, 10000) for _ in range(randint(100, max_input_len))] for _ in range(num_seqs)]
@@ -29,4 +29,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = argparse.ArgumentParser(description="Example of using NanoVLLM")
+    args.add_argument("--model_path", type=str, default="~/huggingface/Qwen3-0.6B/")
+    args = args.parse_args()
+    main(args.model_path)
